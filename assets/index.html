@@ -1,0 +1,122 @@
+<html>
+    <head>
+        <title>Simple AWS Manager</title>
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+        <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+        <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/reconnecting-websocket/1.0.0/reconnecting-websocket.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/macy@2.3.0/dist/macy.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+    </head>
+    <body>
+        <h1>AWS EC2 Instances</h1>
+        <!-- <div class="container">-->
+            <div id="ec2-instances"> 
+                <div class="card child-element" style="width: 300px;" v-for="ins in instances">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ins.Name}}</h2>
+                        <h6 class="card-subtitle mb-2 text-muted">{{ins.InstanceID}}</h6>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item">Public IP: {{ins.PublicIP}}</li>
+                            <li class="list-group-item">Private IP: {{ins.PrivateIP}}</li>
+                            <li class="list-group-item">Backup enabled: {{ins.IsBackedUp}}</li>
+                            <li class="list-group-item">Development: {{ins.IsBackedUp}}</li>
+                            <li class="list-group-item">Current state: {{ins.State}}</li>
+                        </ul>
+                        <div class="card-body">
+                            <button v-on:click="shutdown(ins)" class="btn btn-primary">Shutdown</button>
+                            <button v-on:click="start(ins)" class="btn btn-primary">Start</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <!-- </div>-->
+
+        <script>
+            var app = new Vue({
+                el: "#ec2-instances",
+                ws: null,
+                macy: null,
+                macyTimer: null,
+                data: {
+                    instances: [
+                    ]
+                },
+                methods: {
+                    shutdown: function(ins) {
+                        console.log(ins)
+                        if(this.ws) {
+                            console.log("Sending stop action")
+                            this.ws.send(JSON.stringify({
+                                Action: "stop",
+                                InstanceID: ins.InstanceID
+                            }))
+                        }
+                    },
+                    start: function(ins) {
+                        console.log(ins)
+                        if(this.ws) {
+                            console.log("Sending start action")
+                            this.ws.send(JSON.stringify({
+                                Action: "start",
+                                InstanceID: ins.InstanceID
+                            }))
+                        }
+                    }
+                }
+            })
+
+            app.macy = Macy({
+                container: "#ec2-instances",
+                margin: 10,
+                columns: 6,
+                breakAt: {
+                    1768: {
+                        columns: 5
+                    },
+                    1479: {
+                        columns: 4
+                    },
+                    1182: {
+                        columns: 3
+                    },
+                    892: {
+                        columns: 2
+                    },
+                    599: {
+                        columns: 1
+                    }
+                }
+            })
+
+            app.ws = new ReconnectingWebSocket("ws://localhost:19780/ws")
+            app.ws.addEventListener('message', function(e) {
+                var ins = JSON.parse(e.data)
+                console.log(ins)
+                var found = false
+                for(let oldIns of app.instances) {
+                    if(oldIns.InstanceID == ins.InstanceID) {
+                        Object.assign(oldIns, ins)
+                        found = true
+                        break
+                    }
+                }
+
+                if(!found) {
+                    app.instances.push(ins)
+                    if(app.macyTimer != null) {
+                        clearTimeout(app.macyTimer)
+                    }
+                    app.macyTimer = setTimeout(function() { app.macy.recalculate() }, 1)
+                }
+            })
+            app.ws.addEventListener('close', function(e) {
+                while(app.instances.length > 0) {
+                    app.instances.pop()
+                }
+                app.macy.recalculate()
+            })
+        </script>
+    </body>
+</html>
