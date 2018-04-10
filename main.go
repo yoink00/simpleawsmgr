@@ -19,7 +19,7 @@ var cfg *aws.Config
 var sess *session.Session
 
 func init() {
-	cfg = aws.NewConfig().WithRegion("eu-west-1")
+	cfg = aws.NewConfig()
 	sess = session.Must(session.NewSession(cfg))
 }
 
