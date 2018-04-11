@@ -1,12 +1,15 @@
 package main
 
 import (
-	"github.com/elazarl/go-bindata-assetfs"
-	"github.com/yoink00/simpleawsmgr/assets"
+	"bytes"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/elazarl/go-bindata-assetfs"
+	"github.com/ugorji/go/codec"
+	"github.com/yoink00/simpleawsmgr/assets"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -86,7 +89,7 @@ func (i *EC2Instance) IsDiff(i2 *EC2Instance) bool {
 	return false
 }
 
-func pollForAwsEC2State(instanceChannel chan<- *EC2Instance) {
+func pollForAwsEC2State(instanceChannel chan<- []byte) {
 	defer close(instanceChannel)
 
 	ec2svc := ec2.New(sess)
@@ -130,10 +133,16 @@ func pollForAwsEC2State(instanceChannel chan<- *EC2Instance) {
 				}
 
 				log.Println("Publishing: ", instance.String())
-				instanceChannel <- instance
+				buf := bytes.Buffer{}
+				enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
+				err := enc.Encode(instance)
+				if err != nil {
+					log.Fatalln("Unable to encode: ", err)
+				}
+				instanceChannel <- buf.Bytes()
 			}
 		}
-	 	time.Sleep(10 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 }
 
@@ -161,10 +170,10 @@ func ec2ActionHandler(actionChannel <-chan *EC2Action) {
 	}
 }
 
-func publisher(registerChannel <-chan *ec2UpdateChannel, instanceChannel <-chan *EC2Instance) {
+func publisher(registerChannel <-chan *ec2UpdateChannel, instanceChannel <-chan []byte) {
 
-	subs  := make(map[int]*ec2UpdateChannel)
-	instanceMap := make(map[string]*EC2Instance, 10)
+	subs := make(map[int]*ec2UpdateChannel)
+	instanceMap := make(map[string][]byte, 10)
 
 	// Close all the open channels
 	defer func() {
@@ -173,7 +182,7 @@ func publisher(registerChannel <-chan *ec2UpdateChannel, instanceChannel <-chan 
 		}
 	}()
 
-	outer:
+outer:
 	for {
 		select {
 		case newSub, ok := <-registerChannel:
@@ -204,12 +213,20 @@ func publisher(registerChannel <-chan *ec2UpdateChannel, instanceChannel <-chan 
 				break outer
 			}
 
-			if ins, ok := instanceMap[upd.InstanceID]; ok && !ins.IsDiff(upd) {
+			dec := codec.NewDecoder(bytes.NewBuffer(upd), &codec.MsgpackHandle{})
+			insDec := EC2Instance{}
+			err := dec.Decode(&insDec)
+			if err != nil {
+				log.Println("Unable to decode message: ", err)
+				continue
+			}
+
+			if ins, ok := instanceMap[insDec.InstanceID]; ok && bytes.Compare(ins, upd) != 0 {
 				log.Println("Received update but it is not different from previous update")
 				continue
 			}
-			log.Println("Publishing update: ", upd.String())
-			instanceMap[upd.InstanceID] = upd
+			log.Println("Publishing update: ", insDec.String())
+			instanceMap[insDec.InstanceID] = upd
 			for _, s := range subs {
 				s.channel <- upd
 			}
@@ -220,7 +237,7 @@ func publisher(registerChannel <-chan *ec2UpdateChannel, instanceChannel <-chan 
 }
 
 type ec2UpdateChannel struct {
-	channel chan *EC2Instance
+	channel chan []byte
 	id      int
 }
 
@@ -242,12 +259,12 @@ func NewLoggingHttpFileSystem(fs http.FileSystem) http.FileSystem {
 	newFs := new(LoggingHttpFileSystem)
 	newFs.fs = fs
 
-	return newFs 
+	return newFs
 }
 
 func main() {
 
-	instanceChannel := make(chan *EC2Instance, 10)
+	instanceChannel := make(chan []byte, 10)
 
 	registerChannel := make(chan *ec2UpdateChannel, 10)
 	defer close(registerChannel)
@@ -273,7 +290,7 @@ func main() {
 		}
 
 		ec2Updates := &ec2UpdateChannel{}
-		ec2Updates.channel = make(chan *EC2Instance, 10)
+		ec2Updates.channel = make(chan []byte, 10)
 		ec2Updates.id = ec2InstanceChannelID
 		ec2InstanceChannelID++
 		registerChannel <- ec2Updates
@@ -295,7 +312,13 @@ func main() {
 		}()
 
 		for u := range ec2Updates.channel {
-			err := conn.WriteJSON(*u)
+			dec := codec.NewDecoder(bytes.NewBuffer(u), &codec.MsgpackHandle{})
+			ins := EC2Instance{}
+			err := dec.Decode(&ins)
+			if err != nil {
+				log.Println("Unable to decode instance message: ", err)
+			}
+			err = conn.WriteJSON(ins)
 			if err != nil {
 				log.Println("Unable send ec2Update: ", err)
 				return
@@ -306,10 +329,10 @@ func main() {
 	})
 
 	http.Handle("/", http.FileServer(NewLoggingHttpFileSystem(&assetfs.AssetFS{
-		Asset: assets.Asset,
-	    AssetDir: assets.AssetDir,
-	    AssetInfo: assets.AssetInfo,
-		Prefix: "/",
+		Asset:     assets.Asset,
+		AssetDir:  assets.AssetDir,
+		AssetInfo: assets.AssetInfo,
+		Prefix:    "/",
 	})))
 
 	log.Fatal(http.ListenAndServe("localhost:19780", nil))
