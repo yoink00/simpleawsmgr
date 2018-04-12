@@ -52,7 +52,7 @@ func Deps() error {
 func Assets() error {
 	mg.Deps(Deps)
 	fmt.Println("Building assets...")
-	cmd := exec.Command("go-bindata", "-prefix", "./assets", "-o", "./assets/bindata.go", "-pkg", "assets", "./assets")
+	cmd := exec.Command(filepath.Join(os.Getenv("GOPATH"), "bin", "go-bindata"), "-prefix", "./assets", "-o", "./assets/bindata.go", "-pkg", "assets", "./assets")
 	return cmd.Run()
 }
 
