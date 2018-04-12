@@ -4,7 +4,7 @@ go:
         - "1.10.x"
 before_install:
         - go get -u -d github.com/magefile/mage
-        - cd $GOPATH/src/github.com/magefile/mage && go run bootstrap.go
+        - pushd $GOPATH/src/github.com/magefile/mage && go run bootstrap.go && popd
 script:
         - $GOPATH/bin/mage -v test
 
