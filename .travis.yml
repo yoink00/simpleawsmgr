@@ -2,3 +2,9 @@ language: go
 sudo: false
 go:
         - "1.10.x"
+before_install:
+        - go get -u -d github.com/magefile/mage
+        - cd $GOPATH/src/github.com/magefile/mage && go run bootstrap.go
+script:
+        - $GOPATH/bin/mage -v test
+

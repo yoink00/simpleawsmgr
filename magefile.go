@@ -4,21 +4,37 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 
-	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"path/filepath"
+
+	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 )
 
 var Default = Build
+var isTravis = false
+
+func init() {
+	travisStr := os.Getenv("TRAVIS")
+	if travisStr == "true" {
+		log.Println("Running build in Travis")
+		isTravis = true
+	}
+}
 
 func Deps() error {
+	// All code dependencies are managed by Manul and are vendored.
+	// These dependencies are build dependencies.
 	deps := []string{
+		"github.com/kovetskiy/manul",
 		"github.com/kevinburke/go-bindata",
-		"github.com/elazarl/go-bindata-assetfs",
-		"github.com/aws/aws-sdk-go/aws/...",
-		"github.com/gorilla/websocket",
+	}
+
+	if isTravis {
+		log.Println("Running in Travis. Installiing goveralls")
+		deps = append(deps, "github.com/mattn/goveralls")
 	}
 
 	for _, dep := range deps {
@@ -42,8 +58,15 @@ func Assets() error {
 
 func Test() error {
 	mg.Deps(Assets)
-	fmt.Println("Testing...")
-	cmd := exec.Command("go", "test", "./...")
+	log.Println("Testing...")
+	var cmd *exec.Cmd
+	if isTravis {
+		log.Println("Running tests in Travis. Using Goveralls.")
+		cmd = exec.Command(filepath.Join(os.Getenv("GOPATH"), "bin", "goveralls", "-service=travis-ci"))
+	} else {
+		log.Println("Running tests in outside Travis. Using go test.")
+		cmd = exec.Command("go", "test", "./...")
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
