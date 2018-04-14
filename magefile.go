@@ -29,7 +29,7 @@ func Deps() error {
 	// These dependencies are build dependencies.
 	deps := []string{
 		"github.com/kovetskiy/manul",
-		"github.com/kevinburke/go-bindata",
+		"github.com/kevinburke/go-bindata/...",
 	}
 
 	if isTravis {
