@@ -62,7 +62,7 @@ func Test() error {
 	var cmd *exec.Cmd
 	if isTravis {
 		log.Println("Running tests in Travis. Using Goveralls.")
-		cmd = exec.Command(filepath.Join(os.Getenv("GOPATH"), "bin", "goveralls"), "-service=travis-ci"))
+		cmd = exec.Command(filepath.Join(os.Getenv("GOPATH"), "bin", "goveralls"), "-service=travis-ci")
 	} else {
 		log.Println("Running tests in outside Travis. Using go test.")
 		cmd = exec.Command("go", "test", "./...")
